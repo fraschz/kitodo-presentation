@@ -532,72 +532,24 @@ final class MetsDocument extends Doc
             $domNode = dom_import_simplexml($this->dmdSec[$dmdId]['xml']);
             $domXPath = new \DOMXPath($domNode->ownerDocument);
             $this->registerNamespaces($domXPath);
-            // OK, now make the XPath queries.
-            foreach ($allResults as $resArray) {
-                // Set metadata field's value(s).
-                if (
-                    $resArray['format'] > 0
-                    && !empty($resArray['xpath'])
-                    && ($values = $domXPath->evaluate($resArray['xpath'], $domNode))
-                ) {
-                    if (
-                        $values instanceof \DOMNodeList
-                        && $values->length > 0
-                    ) {
-                        $metadata[$resArray['index_name']] = [];
-                        foreach ($values as $value) {
-                            $metadata[$resArray['index_name']][] = trim((string) $value->nodeValue);
-                        }
-                    } elseif (!($values instanceof \DOMNodeList)) {
-                        $metadata[$resArray['index_name']] = [trim((string) $values)];
-                    }
-                }
-                // Set default value if applicable.
-                if (
-                    empty($metadata[$resArray['index_name']][0])
-                    && strlen($resArray['default_value']) > 0
-                ) {
-                    $metadata[$resArray['index_name']] = [$resArray['default_value']];
-                }
-                // Set sorting value if applicable.
-                if (
-                    !empty($metadata[$resArray['index_name']])
-                    && $resArray['is_sortable']
-                ) {
-                    if (
-                        $resArray['format'] > 0
-                        && !empty($resArray['xpath_sorting'])
-                        && ($values = $domXPath->evaluate($resArray['xpath_sorting'], $domNode))
-                    ) {
-                        if (
-                            $values instanceof \DOMNodeList
-                            && $values->length > 0
-                        ) {
-                            $metadata[$resArray['index_name'] . '_sorting'][0] = trim((string) $values->item(0)->nodeValue);
-                        } elseif (!($values instanceof \DOMNodeList)) {
-                            $metadata[$resArray['index_name'] . '_sorting'][0] = trim((string) $values);
-                        }
-                    }
-                    if (empty($metadata[$resArray['index_name'] . '_sorting'][0])) {
-                        $metadata[$resArray['index_name'] . '_sorting'][0] = $metadata[$resArray['index_name']][0];
-                    }
-                }
-            }
-            // Set title to empty string if not present.
-            if (empty($metadata['title'][0])) {
-                $metadata['title'][0] = '';
-                $metadata['title_sorting'][0] = '';
-            }
+            $metadata = $this->handleAllResults($allResults, $domXPath, $domNode, $metadata);
             // Extract metadata only from first supported dmdSec.
             $hasSupportedMetadata = true;
             break;
         }
         if ($hasSupportedMetadata) {
+            // TODO Call method for subentries
+            //$this->getMetadataSubentries();
             return $metadata;
         } else {
             $this->logger->warning('No supported metadata found for logical structure with @ID "' . $id . '"');
             return [];
         }
+    }
+
+    private function getMetadataSubentries($parent)
+    {
+        // TODO
     }
 
     /**
@@ -1064,5 +1016,73 @@ final class MetsDocument extends Doc
             $this->logger = GeneralUtility::makeInstance(LogManager::class)->getLogger(static::class);
             $this->logger->error('Could not load XML after deserialization');
         }
+    }
+
+    /**
+     * @param array $allResults
+     * @param \DOMXPath $domXPath
+     * @param \DOMElement|null $domNode
+     * @param array $metadata
+     * @return array
+     */
+    private function handleAllResults($allResults, \DOMXPath $domXPath, ?\DOMElement $domNode, array $metadata): array
+    {
+        // OK, now make the XPath queries.
+        foreach ($allResults as $resArray) {
+            // Set metadata field's value(s).
+            if (
+                $resArray['format'] > 0
+                && !empty($resArray['xpath'])
+                && ($values = $domXPath->evaluate($resArray['xpath'], $domNode))
+            ) {
+                if (
+                    $values instanceof \DOMNodeList
+                    && $values->length > 0
+                ) {
+                    $metadata[$resArray['index_name']] = [];
+                    foreach ($values as $value) {
+                        $metadata[$resArray['index_name']][] = trim((string)$value->nodeValue);
+                    }
+                } elseif (!($values instanceof \DOMNodeList)) {
+                    $metadata[$resArray['index_name']] = [trim((string)$values)];
+                }
+            }
+            // Set default value if applicable.
+            if (
+                empty($metadata[$resArray['index_name']][0])
+                && strlen($resArray['default_value']) > 0
+            ) {
+                $metadata[$resArray['index_name']] = [$resArray['default_value']];
+            }
+            // Set sorting value if applicable.
+            if (
+                !empty($metadata[$resArray['index_name']])
+                && $resArray['is_sortable']
+            ) {
+                if (
+                    $resArray['format'] > 0
+                    && !empty($resArray['xpath_sorting']) // TODO: will fail, for subentries
+                    && ($values = $domXPath->evaluate($resArray['xpath_sorting'], $domNode))
+                ) {
+                    if (
+                        $values instanceof \DOMNodeList
+                        && $values->length > 0
+                    ) {
+                        $metadata[$resArray['index_name'] . '_sorting'][0] = trim((string)$values->item(0)->nodeValue);
+                    } elseif (!($values instanceof \DOMNodeList)) {
+                        $metadata[$resArray['index_name'] . '_sorting'][0] = trim((string)$values);
+                    }
+                }
+                if (empty($metadata[$resArray['index_name'] . '_sorting'][0])) {
+                    $metadata[$resArray['index_name'] . '_sorting'][0] = $metadata[$resArray['index_name']][0];
+                }
+            }
+        }
+        // Set title to empty string if not present.
+        if (empty($metadata['title'][0])) {
+            $metadata['title'][0] = '';
+            $metadata['title_sorting'][0] = '';
+        }
+        return $metadata;
     }
 }
