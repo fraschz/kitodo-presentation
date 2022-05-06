@@ -469,6 +469,7 @@ final class MetsDocument extends Doc
                 ->getRestrictions()
                 ->removeByType(HiddenRestriction::class);
             // Get all metadata with configured xpath and applicable format first.
+            // Exclude metadata with subentries, we will handle them later.
             $resultWithFormat = $queryBuilder
                 ->select(
                     'tx_dlf_metadata.index_name AS index_name',
@@ -501,6 +502,7 @@ final class MetsDocument extends Doc
                     $queryBuilder->expr()->eq('tx_dlf_metadata.pid', intval($cPid)),
                     $queryBuilder->expr()->eq('tx_dlf_metadata.l18n_parent', 0),
                     $queryBuilder->expr()->eq('tx_dlf_metadataformat_joins.pid', intval($cPid)),
+                    $queryBuilder->expr()->eq('tx_dlf_metadataformat_joins.subentries', 0),
                     $queryBuilder->expr()->eq('tx_dlf_formats_joins.type', $queryBuilder->createNamedParameter($this->dmdSec[$dmdId]['type']))
                 )
                 ->execute();
@@ -528,6 +530,53 @@ final class MetsDocument extends Doc
                 ->execute();
             // Merge both result sets.
             $allResults = array_merge($resultWithFormat->fetchAll(), $resultWithoutFormat->fetchAll());
+            // Get subentries separately.
+            $queryBuilder = GeneralUtility::makeInstance(ConnectionPool::class)
+                ->getQueryBuilderForTable('tx_dlf_metadata');
+            // Get hidden records, too.
+            $queryBuilder
+                ->getRestrictions()
+                ->removeByType(HiddenRestriction::class);
+            $subentries = $queryBuilder
+                ->select(
+                    'tx_dlf_subentries_joins.index_name AS index_name',
+                    'tx_dlf_metadata.index_name AS parent_index_name',
+                    'tx_dlf_subentries_joins.xpath AS xpath',
+                    'tx_dlf_subentries_joins.default_value AS default_value'
+                )
+                ->from('tx_dlf_metadata')
+                ->innerJoin(
+                    'tx_dlf_metadata',
+                    'tx_dlf_metadataformat',
+                    'tx_dlf_metadataformat_joins',
+                    $queryBuilder->expr()->eq(
+                        'tx_dlf_metadataformat_joins.parent_id',
+                        'tx_dlf_metadata.uid'
+                    )
+                )
+                ->innerJoin(
+                    'tx_dlf_metadataformat_joins',
+                    'tx_dlf_metadata_subentries',
+                    'tx_dlf_subentries_joins',
+                    $queryBuilder->expr()->eq(
+                        'tx_dlf_subentries_joins.parent_id',
+                        'tx_dlf_metadataformat_joins.uid'
+                    )
+                )
+                ->where(
+                    $queryBuilder->expr()->eq('tx_dlf_metadata.pid', intval($cPid)),
+                    // $queryBuilder->expr()->eq('tx_dlf_metadata.l18n_parent', 0),
+                    // $queryBuilder->expr()->eq('tx_dlf_metadataformat_joins.pid', intval($cPid)),
+                    $queryBuilder->expr()->gt('tx_dlf_metadataformat_joins.subentries', 0),
+                    $queryBuilder->expr()->eq('tx_dlf_subentries_joins.l18n_parent', 0),
+                    $queryBuilder->expr()->eq('tx_dlf_subentries_joins.pid', intval($cPid))
+                    // $queryBuilder->expr()->eq('tx_dlf_formats_joins.type', $queryBuilder->createNamedParameter($this->dmdSec[$dmdId]['type']))
+                )
+                ->execute();
+            $subentriesResult = $subentries->fetchAll();
+            // BREAKPOINT
+            print_r($subentriesResult);
+            die();
             // We need a \DOMDocument here, because SimpleXML doesn't support XPath functions properly.
             $domNode = dom_import_simplexml($this->dmdSec[$dmdId]['xml']);
             $domXPath = new \DOMXPath($domNode->ownerDocument);
