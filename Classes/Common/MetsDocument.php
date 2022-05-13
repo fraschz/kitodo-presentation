@@ -575,12 +575,7 @@ final class MetsDocument extends Doc
                 )
                 ->execute();
             $subentriesResult = $subentries->fetchAll();
-            // We need a \  DOMDocument here, because SimpleXML doesn't support XPath functions properly.
-            $domNode = dom_import_simplexml($this->dmdSec[$dmdId]['xml']);
-            $domXPath = new \DOMXPath($domNode->ownerDocument);
-            $this->registerNamespaces($domXPath);
-            // OK, now make the XPath queries.
-            $metadata = $this->handleAllResults($allResults, $subentriesResult, $domXPath, $domNode, $metadata);
+            $metadata = $this->handleAllResults($dmdId, $allResults, $subentriesResult, $metadata);
             // Extract metadata only from first supported dmdSec.
             $hasSupportedMetadata = true;
             break;
@@ -593,18 +588,24 @@ final class MetsDocument extends Doc
         }
     }
 
-    private function getSubentries($allSubentries, string $parent_index_name, \DOMNode $parent_node)
+    /**
+     * @param array $allSubentries
+     * @param string $parentIndex
+     * @param \DOMNode parentNode
+     * @return array
+     */
+    private function getSubentries($allSubentries, string $parentIndex, \DOMNode $parentNode)
     {
-        $domXPath = new \DOMXPath($parent_node->ownerDocument);
+        $domXPath = new \DOMXPath($parentNode->ownerDocument);
         $this->registerNamespaces($domXPath);
         $theseSubentries = [];
         foreach ($allSubentries as $subentry)
         {
-            if ($subentry['parent_index_name'] == $parent_index_name)
+            if ($subentry['parent_index_name'] == $parentIndex)
             {
                 if (
                     !empty($subentry['xpath'])
-                    && ($values = $domXPath->evaluate($subentry['xpath'], $parent_node))
+                    && ($values = $domXPath->evaluate($subentry['xpath'], $parentNode))
                 ) {
                     if (
                         $values instanceof \DOMNodeList
@@ -1101,14 +1102,17 @@ final class MetsDocument extends Doc
 
     /**
      * @param array $allResults
-     * @param array $subentriesResult
-     * @param \DOMXPath $domXPath
-     * @param \DOMElement|null $domNode
+     * @param array $allSubentries
      * @param array $metadata
      * @return array
      */
-    private function handleAllResults($allResults, $allSubentries, \DOMXPath $domXPath, ?\DOMElement $domNode, array $metadata): array
+    private function handleAllResults($dmdId, $allResults, $allSubentries, array $metadata): array
     {
+        // We need a \  DOMDocument here, because SimpleXML doesn't support XPath functions properly.
+        $domNode = dom_import_simplexml($this->dmdSec[$dmdId]['xml']);
+        $domXPath = new \DOMXPath($domNode->ownerDocument);
+        $this->registerNamespaces($domXPath);
+        // OK, now make the XPath queries.
         foreach ($allResults as $resArray) {
             // Set metadata field's value(s).
             if (
