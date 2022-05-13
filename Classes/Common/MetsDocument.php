@@ -542,7 +542,6 @@ final class MetsDocument extends Doc
                     'tx_dlf_subentries_joins.index_name AS index_name',
                     'tx_dlf_metadata.index_name AS parent_index_name',
                     'tx_dlf_subentries_joins.xpath AS xpath',
-                    'tx_dlf_metadataformat_joins.xpath AS parent_xpath',
                     'tx_dlf_subentries_joins.default_value AS default_value'
                 )
                 ->from('tx_dlf_metadata')
