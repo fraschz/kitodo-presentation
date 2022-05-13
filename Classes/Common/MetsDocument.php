@@ -469,7 +469,7 @@ final class MetsDocument extends Doc
                 ->getRestrictions()
                 ->removeByType(HiddenRestriction::class);
             // Get all metadata with configured xpath and applicable format first.
-            // Exclude metadata with subentries, we will handle them later.
+            // Exclude metadata with subentries, we will fetch them later.
             $resultWithFormat = $queryBuilder
                 ->select(
                     'tx_dlf_metadata.index_name AS index_name',
@@ -502,7 +502,7 @@ final class MetsDocument extends Doc
                     $queryBuilder->expr()->eq('tx_dlf_metadata.pid', intval($cPid)),
                     $queryBuilder->expr()->eq('tx_dlf_metadata.l18n_parent', 0),
                     $queryBuilder->expr()->eq('tx_dlf_metadataformat_joins.pid', intval($cPid)),
-                    $queryBuilder->expr()->eq('tx_dlf_metadataformat_joins.subentries', 0),
+                    //$queryBuilder->expr()->eq('tx_dlf_metadataformat_joins.subentries', 0),
                     $queryBuilder->expr()->eq('tx_dlf_formats_joins.type', $queryBuilder->createNamedParameter($this->dmdSec[$dmdId]['type']))
                 )
                 ->execute();
@@ -542,6 +542,7 @@ final class MetsDocument extends Doc
                     'tx_dlf_subentries_joins.index_name AS index_name',
                     'tx_dlf_metadata.index_name AS parent_index_name',
                     'tx_dlf_subentries_joins.xpath AS xpath',
+                    'tx_dlf_metadataformat_joins.xpath AS parent_xpath',
                     'tx_dlf_subentries_joins.default_value AS default_value'
                 )
                 ->from('tx_dlf_metadata')
@@ -574,21 +575,17 @@ final class MetsDocument extends Doc
                 )
                 ->execute();
             $subentriesResult = $subentries->fetchAll();
-            // BREAKPOINT
-            print_r($subentriesResult);
-            die();
-            // We need a \DOMDocument here, because SimpleXML doesn't support XPath functions properly.
+            // We need a \  DOMDocument here, because SimpleXML doesn't support XPath functions properly.
             $domNode = dom_import_simplexml($this->dmdSec[$dmdId]['xml']);
             $domXPath = new \DOMXPath($domNode->ownerDocument);
             $this->registerNamespaces($domXPath);
-            $metadata = $this->handleAllResults($allResults, $domXPath, $domNode, $metadata);
+            // OK, now make the XPath queries.
+            $metadata = $this->handleAllResults($allResults, $subentriesResult, $domXPath, $domNode, $metadata);
             // Extract metadata only from first supported dmdSec.
             $hasSupportedMetadata = true;
             break;
         }
         if ($hasSupportedMetadata) {
-            // TODO Call method for subentries
-            //$this->getMetadataSubentries();
             return $metadata;
         } else {
             $this->logger->warning('No supported metadata found for logical structure with @ID "' . $id . '"');
@@ -596,9 +593,44 @@ final class MetsDocument extends Doc
         }
     }
 
-    private function getMetadataSubentries($parent)
+    private function getSubentries($allSubentries, string $parent_index_name, \DOMNode $parent_node)
     {
-        // TODO
+        $domXPath = new \DOMXPath($parent_node->ownerDocument);
+        $this->registerNamespaces($domXPath);
+        $theseSubentries = [];
+        foreach ($allSubentries as $subentry)
+        {
+            if ($subentry['parent_index_name'] == $parent_index_name)
+            {
+                if (
+                    !empty($subentry['xpath'])
+                    && ($values = $domXPath->evaluate($subentry['xpath'], $parent_node))
+                ) {
+                    if (
+                        $values instanceof \DOMNodeList
+                        && $values->length > 0
+                    ) {
+                        foreach ($values as $value) {
+                            $theseSubentries[] = trim((string)$value->nodeValue);
+                        }
+                    } elseif (!($values instanceof \DOMNodeList)) {
+                        $theseSubentries = [trim((string)$values)];
+                    }
+                }
+                // Set default value if applicable.
+                if (
+                    empty($theseSubentries[0])
+                    && strlen($subentry['default_value']) > 0
+                ) {
+                    $theseSubentries = [$subentry['default_value']];
+                }
+            }
+        }
+        if (empty($theseSubentries))
+        {
+            return false;
+        }
+        return $theseSubentries;
     }
 
     /**
@@ -1069,14 +1101,14 @@ final class MetsDocument extends Doc
 
     /**
      * @param array $allResults
+     * @param array $subentriesResult
      * @param \DOMXPath $domXPath
      * @param \DOMElement|null $domNode
      * @param array $metadata
      * @return array
      */
-    private function handleAllResults($allResults, \DOMXPath $domXPath, ?\DOMElement $domNode, array $metadata): array
+    private function handleAllResults($allResults, $allSubentries, \DOMXPath $domXPath, ?\DOMElement $domNode, array $metadata): array
     {
-        // OK, now make the XPath queries.
         foreach ($allResults as $resArray) {
             // Set metadata field's value(s).
             if (
@@ -1090,10 +1122,15 @@ final class MetsDocument extends Doc
                 ) {
                     $metadata[$resArray['index_name']] = [];
                     foreach ($values as $value) {
-                        $metadata[$resArray['index_name']][] = trim((string)$value->nodeValue);
+                        if ($subentries = $this->getSubentries($allSubentries, $resArray['index_name'], $value))
+                        {
+                            $metadata[$resArray['index_name']][] = $subentries;
+                        } else {
+                            $metadata[$resArray['index_name']][] = trim((string)$value->nodeValue);
+                        }
                     }
                 } elseif (!($values instanceof \DOMNodeList)) {
-                    $metadata[$resArray['index_name']] = [trim((string)$values)];
+                    $metadata[$resArray['index_name']] = [trim((string)$values->nodeValue)];
                 }
             }
             // Set default value if applicable.
