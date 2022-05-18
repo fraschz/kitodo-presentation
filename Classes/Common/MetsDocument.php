@@ -686,19 +686,20 @@ final class MetsDocument extends Doc
                         $values instanceof \DOMNodeList
                         && $values->length > 0
                     ) {
+                        $theseSubentries[$subentry['index_name']] = [];
                         foreach ($values as $value) {
-                            $theseSubentries[] = trim((string)$value->nodeValue);
+                            $theseSubentries[$subentry['index_name']][] = trim((string)$value->nodeValue);
                         }
                     } elseif (!($values instanceof \DOMNodeList)) {
-                        $theseSubentries = [trim((string)$values)];
+                        $theseSubentries[$subentry['index_name']] = [trim((string)$values->nodeValue)];
                     }
                 }
                 // Set default value if applicable.
                 if (
-                    empty($theseSubentries[0])
+                    empty($theseSubentries[$subEntry['index_name']][0])
                     && strlen($subentry['default_value']) > 0
                 ) {
-                    $theseSubentries = [$subentry['default_value']];
+                    $theseSubentries[$subentry['index_name']] = [$subentry['default_value']];
                 }
             }
         }
