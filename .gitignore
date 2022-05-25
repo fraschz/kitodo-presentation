@@ -1,4 +1,4 @@
-.bak
+*.bak
 .buildpath
 .cache
 .idea/
